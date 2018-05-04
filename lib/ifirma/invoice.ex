@@ -6,16 +6,22 @@ defmodule Ifirma.Invoice do
   defstart start_link do
     key = %Ifirma.Api.Key{
       name: "faktura",
-      value: Application.get_env(:ifirma, "key")
+      value: config().key
     }
     state = Ifirma.Api.new(
-      Application.get_env(:ifirma, "user"),
-      key
+      config().user,
+      key,
+      "fakturakraj/"
     )
     initial_state(state)
   end
 
   defcall list, state: state do
-    reply(state)
+    set_and_reply(state, Ifirma.Api.get(state, "list.json"))
+  end
+
+  defp config do
+    Application.get_env(:ifirma, __MODULE__)
+    |> Map.new
   end
 end

@@ -1,8 +1,7 @@
 defmodule Ifirma.Api do
   @moduledoc false
-  use Tesla
 
-  plug Tesla.Middleware.BaseUrl, "https://www.ifirma.pl/iapi"
+  @baseUrl "https://www.ifirma.pl/iapi"
 
   @type key :: Ifirma.Api.Key.t()
 
@@ -12,32 +11,39 @@ defmodule Ifirma.Api do
              }
 
   defstruct username: nil,
-            key: nil
+            key: nil,
+            url: nil
 
-  #@spec new(username: String.t(), key: key) :: Ifirma.Api.t()
-  def new(username, key) do
+
+  @spec new(username:: String.t(), key:: key, url:: String.t()) :: Ifirma.Api.t()
+  def new(username, key, url) do
     %__MODULE__{
       username: username,
-      key: key
+      key: key,
+      url: url(@baseUrl, url)
     }
   end
 
-  def gett(api, url) do
-    api
-    |> auth_header('')
-    |> (fn(header) -> [{Tesla.Middleware.Headers, [header]}] end).()
-    |> Tesla.build_client
-    |> get(url)
+  @spec get(__MODULE__.t(), String.t()) :: tuple
+  def get(api, url) do
+    client(api)
+    |> Tesla.get(url)
   end
 
-  defp auth_header(api, request) do
-    {"authorization", "IAPIS user=" <> api.username <> " hmac-sha1=" <> hmac(api, request)}
+  @spec client(__MODULE__.t()) :: Tesla.Client.t()
+  def client(api)do
+    Tesla.build_client([{Tesla.Middleware.Headers, [
+      {"content-type", "application/json; charset=utf-8"},
+      {"accept", "application/json"}]},
+      {Tesla.Middleware.BaseUrl, api.url},
+      {Tesla.Middleware.DecodeJson, []},
+      {Ifirma.Api.AuthHeader, api}
+    ])
   end
 
-  defp hmac(api, request) do
-    :crypto.hmac(:sha, api.key.value, request)
-    |> Base.encode16
-    |> String.downcase
+  defp url(url1, url2) do
+    join = if String.last(url1) == "/", do: "", else: "/"
+    url1 <> join <> url2
   end
 end
 
@@ -49,4 +55,34 @@ defmodule Ifirma.Api.Key do
 
   defstruct name: nil,
             value: nil
+end
+
+defmodule Ifirma.Api.AuthHeader do
+  @behaviour Tesla.Middleware
+
+  def call(env, next, options) do
+    env
+    |> auth_header(options)
+    |> Tesla.run(next)
+  end
+
+  defp auth_header(env, opts) do
+    message(env, opts)
+    |> hmac(opts)
+    |> (fn(hash) -> ["IAPIS user=", opts.username, ", hmac-sha1=", hash] end).()
+    |> Enum.join()
+    |> (fn(val) -> Tesla.put_header(env, "authentication", val) end).()
+  end
+
+  defp message(env, opts) do
+    [ env.url, opts.username, opts.key.name, env.body ]
+    |> Enum.join()
+  end
+
+  defp hmac(request, opts) do
+    :crypto.hmac(:sha, Base.decode16!(opts.key.value), request)
+    |> Base.encode16
+    |> String.downcase
+  end
+
 end
