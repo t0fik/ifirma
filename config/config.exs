@@ -32,3 +32,5 @@ use Mix.Config
 config :ifirma, Ifirma.Invoice,
   key: "",
   user: ""
+
+import_config "invoice.secret.exs"
